@@ -146,7 +146,7 @@ app.get('/api/auth/url', async (req, res) => {
     return res.status(500).json({ error: 'Authentik not configured' });
   }
   
-  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const redirectUri = `${appUrl}/auth/callback`;
   
   const endpoints = await getOidcEndpoints(issuerUrl);
@@ -163,7 +163,7 @@ app.get('/api/auth/url', async (req, res) => {
 
 app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
   const { code } = req.query;
-  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
   const redirectUri = `${appUrl}/auth/callback`;
   const issuerUrl = process.env.AUTHENTIK_ISSUER_URL?.replace(/\/$/, '') || '';
 
