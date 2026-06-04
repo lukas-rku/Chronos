@@ -112,7 +112,35 @@ const requireApiKey = async (req: any, res: any, next: any) => {
 };
 
 // --- AUTHENTIK OAUTH ROUTES ---
-app.get('/api/auth/url', (req, res) => {
+const getOidcEndpoints = async (issuerUrl: string) => {
+  const cleanIssuer = issuerUrl.replace(/\/$/, '');
+  const discoveryUrl = `${cleanIssuer}/.well-known/openid-configuration`;
+  
+  try {
+    const res = await fetch(discoveryUrl);
+    if (res.ok) {
+      const config = await res.json();
+      if (config.authorization_endpoint && config.token_endpoint && config.userinfo_endpoint) {
+        return {
+          authorization: config.authorization_endpoint,
+          token: config.token_endpoint,
+          userinfo: config.userinfo_endpoint
+        };
+      }
+    }
+  } catch (e) {
+    console.warn(`OIDC Discovery failed for ${discoveryUrl}, falling back to defaults:`, e);
+  }
+
+  // Common fallbacks
+  return {
+    authorization: `${cleanIssuer}/authorize`,
+    token: `${cleanIssuer}/token`,
+    userinfo: `${cleanIssuer}/userinfo`
+  };
+};
+
+app.get('/api/auth/url', async (req, res) => {
   const issuerUrl = process.env.AUTHENTIK_ISSUER_URL;
   if (!issuerUrl || !process.env.AUTHENTIK_CLIENT_ID) {
     return res.status(500).json({ error: 'Authentik not configured' });
@@ -120,7 +148,8 @@ app.get('/api/auth/url', (req, res) => {
   
   const appUrl = process.env.APP_URL || 'http://localhost:3000';
   const redirectUri = `${appUrl}/auth/callback`;
-  const endpoint = issuerUrl.replace(/\/$/, '') + '/authorize';
+  
+  const endpoints = await getOidcEndpoints(issuerUrl);
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -129,7 +158,7 @@ app.get('/api/auth/url', (req, res) => {
     scope: 'openid profile email'
   });
 
-  res.json({ url: `${endpoint}?${params.toString()}` });
+  res.json({ url: `${endpoints.authorization}?${params.toString()}` });
 });
 
 app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
@@ -141,8 +170,9 @@ app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
   if (!code) return res.status(400).send('No code provided');
 
   try {
-    const tokenEndpoint = `${issuerUrl}/token`;
-    const tokenRes = await fetch(tokenEndpoint, {
+    const endpoints = await getOidcEndpoints(issuerUrl);
+    
+    const tokenRes = await fetch(endpoints.token, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -158,8 +188,7 @@ app.get(['/auth/callback', '/auth/callback/'], async (req, res) => {
     if (!tokenRes.ok) throw new Error('Token fetch failed: ' + await tokenRes.text());
     const tokenData = await tokenRes.json();
     
-    const userInfoEndpoint = `${issuerUrl}/userinfo`;
-    const userRes = await fetch(userInfoEndpoint, {
+    const userRes = await fetch(endpoints.userinfo, {
       headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
     });
     
