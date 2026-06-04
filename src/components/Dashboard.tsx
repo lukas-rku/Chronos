@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
 import { User, TimeEntry } from '../types';
 import { calculateDailySummaries, formatDuration, formatHourlyPay, getDailyBlocks, cn, parseSafeDate } from '../utils';
 import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus, Target, Edit2, Trash2, Zap, Brain } from 'lucide-react';
@@ -311,10 +310,10 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     </svg>
                     <div className="flex flex-col items-center">
                       <div className="text-3xl sm:text-4xl font-mono font-bold text-white mb-1 transition-all duration-200 tracking-tighter">
-                        {today ? formatDuration(today.totalWorkedMs) : '00:00:00'}
+                        {formatDuration(monthTotalMs)}
                       </div>
                       <div className="text-xs font-mono text-indigo-300">
-                        Today's Total
+                        Monthly Total
                       </div>
                     </div>
                   </div>
@@ -362,91 +361,65 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   </div>
                 </div>
 
-                {/* Weekly Earnings Card */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                  whileHover={{ scale: 1.02 }}
-                  className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-3xl p-8 shadow-xl hover:border-emerald-500/40 transition-all duration-300 w-full"
-                >
-                  <h3 className="text-emerald-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2 font-medium">
-                    <DollarSign className="w-4 h-4 text-emerald-400" /> Weekly Earnings
+                <div className="bg-gradient-to-br from-emerald-500/5 to-indigo-500/5 rounded-3xl border border-white/10 p-8 transform transition-transform hover:scale-[1.02] flex flex-col gap-6 w-full">
+                  <h3 className="text-white text-sm uppercase tracking-widest flex items-center gap-2 font-medium">
+                    <DollarSign className="w-4 h-4 text-emerald-400" /> Financial Dashboard
                   </h3>
-                  <div className="flex justify-between items-baseline mb-2">
-                    <AnimatedNumber 
-                      value={weekGross}
-                      formatter={(v) => `${currency}${v.toFixed(2)}`}
-                      className="text-4xl font-bold text-white font-mono"
-                    />
-                    <span className="text-emerald-400 text-xs font-bold font-mono">GROSS</span>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Est. Tax (-{taxRate}%)</span>
-                      <span className="text-red-400 font-mono">-{currency}{weekTax.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm pt-2 border-t border-emerald-500/10">
-                      <span className="text-emerald-400 font-bold">Net Earnings</span>
-                      <span className="text-emerald-400 font-mono font-bold">{currency}{weekNet.toFixed(2)}</span>
-                    </div>
-                  </div>
-                </motion.div>
-
-                {/* Financial Projections Card */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, ease: "easeOut", delay: 0.1 }}
-                  whileHover={{ scale: 1.02 }}
-                  className="bg-gradient-to-br from-indigo-500/10 to-transparent border border-indigo-500/20 rounded-3xl p-8 shadow-xl hover:border-indigo-500/40 transition-all duration-300 w-full"
-                >
-                  <h3 className="text-indigo-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2 font-medium">
-                    <Brain className="w-4 h-4 text-indigo-400" /> Financial Projections
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Month to Date</span>
+                  
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                    <div className="col-span-2 sm:col-span-1">
+                      <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Month to Date</p>
                       <AnimatedNumber 
                         value={monthGross}
                         formatter={(v) => `${currency}${v.toFixed(2)}`}
-                        className="text-white font-mono font-semibold"
+                        className="text-3xl font-bold text-white font-mono"
                       />
                     </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Est. Remaining</span>
+                    <div className="col-span-2 sm:col-span-1">
+                      <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Weekly Net (Est)</p>
+                      <AnimatedNumber 
+                        value={weekNet}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        className="text-3xl font-bold text-emerald-400 font-mono"
+                      />
+                    </div>
+                    
+                    <div className="col-span-2 border-t border-white/5 pt-4"></div>
+
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Est. Remaining</p>
                       <AnimatedNumber 
                         value={expectedRemaining}
                         formatter={(v) => `${currency}${v.toFixed(2)}`}
-                        className="text-slate-300 font-mono"
+                        className="text-indigo-400 font-mono text-sm"
                       />
                     </div>
-                    <div className="flex justify-between items-center text-sm border-t border-indigo-500/10 pt-3">
-                      <span className="text-slate-400 font-semibold">Projected Month</span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Weekly Gross</p>
                       <AnimatedNumber 
-                        value={monthGross + expectedRemaining}
+                        value={weekGross}
                         formatter={(v) => `${currency}${v.toFixed(2)}`}
-                        className="text-indigo-400 font-mono font-bold"
+                        className="text-slate-300 font-mono text-sm"
                       />
                     </div>
-                    <div className="flex justify-between items-center text-sm border-t border-indigo-500/5 pt-3">
-                      <span className="text-slate-400">Year to Date</span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Year To Date</p>
                       <AnimatedNumber 
                         value={yearGross}
                         formatter={(v) => `${currency}${v.toFixed(2)}`}
-                        className="text-emerald-400 font-mono"
+                        className="text-emerald-300 font-mono text-sm"
                       />
                     </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Avg Daily (Year)</span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Avg Daily</p>
                       <AnimatedNumber 
                         value={avgDailyEarnings}
                         formatter={(v) => `${currency}${v.toFixed(2)}`}
-                        className="text-amber-400 font-mono"
+                        className="text-amber-300 font-mono text-sm"
                       />
                     </div>
                   </div>
-                </motion.div>
+                </div>
               </div>
 
               {/* Detailed Dashboard */}
@@ -457,8 +430,8 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     <p className="text-2xl font-bold text-white font-mono">{formatDuration(totalWeekMs)}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                    <p className="text-slate-500 text-xs uppercase mb-1">Month Total</p>
-                    <p className="text-2xl font-bold text-white font-mono">{formatDuration(monthTotalMs)}</p>
+                    <p className="text-slate-500 text-xs uppercase mb-1">Today's Total</p>
+                    <p className="text-2xl font-bold text-white font-mono">{today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <p className="text-slate-500 text-xs uppercase mb-1">Current State</p>
