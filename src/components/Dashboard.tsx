@@ -90,7 +90,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     await fetch('/api/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type })
+      body: JSON.stringify({ type, timestamp: new Date().toISOString() })
     });
     fetchEntries();
   };
@@ -283,9 +283,9 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                 <div className="bg-white/5 rounded-3xl border border-white/10 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300 hover:border-indigo-500/30">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
-                  <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="relative w-full max-w-[16rem] aspect-square flex items-center justify-center mb-6 drop-shadow-[0_0_30px_rgba(99,102,241,0.2)] mx-auto">
-                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 256 256">
+                  <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2 mt-4 text-center">Current Pulse</p>
+                  <div className="relative w-full max-w-[14rem] sm:max-w-[16rem] aspect-square flex items-center justify-center mb-6 drop-shadow-[0_0_20px_rgba(99,102,241,0.2)] mx-auto">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90 overflow-visible" viewBox="0 0 256 256">
                       {/* Weekly Goal Ring (Outer) */}
                       <circle cx="128" cy="128" r="116" className="stroke-white/5 fill-none" strokeWidth="6" />
                       <circle 
@@ -309,11 +309,11 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       />
                     </svg>
                     <div className="flex flex-col items-center">
-                      <div className="text-4xl font-mono font-bold text-white mb-1 transition-all duration-200 tracking-tighter">
-                        {today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}
+                      <div className="text-3xl sm:text-4xl font-mono font-bold text-white mb-1 transition-all duration-200 tracking-tighter">
+                        {formatDuration(monthTotalMs)}
                       </div>
                       <div className="text-xs font-mono text-indigo-300">
-                        {goalProgress.toFixed(0)}% Daily Goal
+                        Monthly Total
                       </div>
                     </div>
                   </div>
@@ -371,7 +371,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Month to Date</p>
                       <AnimatedNumber 
                         value={monthGross}
-                        formatter={(v) => `${currency}${v.toFixed(4)}`}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
                         className="text-3xl font-bold text-white font-mono"
                       />
                     </div>
@@ -379,7 +379,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Weekly Net (Est)</p>
                       <AnimatedNumber 
                         value={weekNet}
-                        formatter={(v) => `${currency}${v.toFixed(4)}`}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
                         className="text-3xl font-bold text-emerald-400 font-mono"
                       />
                     </div>
@@ -388,19 +388,35 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
 
                     <div className="col-span-1 space-y-1">
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Est. Remaining</p>
-                      <p className="text-indigo-400 font-mono text-sm">{currency}{expectedRemaining.toFixed(4)}</p>
+                      <AnimatedNumber 
+                        value={expectedRemaining}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        className="text-indigo-400 font-mono text-sm"
+                      />
                     </div>
                     <div className="col-span-1 space-y-1">
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Weekly Gross</p>
-                      <p className="text-slate-300 font-mono text-sm">{currency}{weekGross.toFixed(4)}</p>
+                      <AnimatedNumber 
+                        value={weekGross}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        className="text-slate-300 font-mono text-sm"
+                      />
                     </div>
                     <div className="col-span-1 space-y-1">
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Year To Date</p>
-                      <p className="text-emerald-300 font-mono text-sm">{currency}{yearGross.toFixed(4)}</p>
+                      <AnimatedNumber 
+                        value={yearGross}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        className="text-emerald-300 font-mono text-sm"
+                      />
                     </div>
                     <div className="col-span-1 space-y-1">
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Avg Daily</p>
-                      <p className="text-amber-300 font-mono text-sm">{currency}{avgDailyEarnings.toFixed(4)}</p>
+                      <AnimatedNumber 
+                        value={avgDailyEarnings}
+                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        className="text-amber-300 font-mono text-sm"
+                      />
                     </div>
                   </div>
                 </div>

@@ -264,12 +264,12 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.post('/api/action', requireAuth, async (req, res) => {
-  const { type } = req.body;
+  const { type, timestamp } = req.body;
   if (!['in', 'out', 'break_start', 'break_end'].includes(type)) {
     return res.status(400).json({ error: 'Invalid action type' });
   }
   try {
-    await dbInsertEntry(req.session.userId!, type);
+    await dbInsertEntry(req.session.userId!, type, timestamp);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: 'Failed to record action' });
