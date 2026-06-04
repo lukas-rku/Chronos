@@ -21,11 +21,11 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [hourlyRate, setHourlyRate] = useState(() => Number(localStorage.getItem('hourlyRate') || '25'));
-  const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '$');
-  const [dailyGoal, setDailyGoal] = useState(() => Number(localStorage.getItem('dailyGoal') || '8'));
-  const [weeklyGoal, setWeeklyGoal] = useState(() => Number(localStorage.getItem('weeklyGoal') || '40'));
-  const [taxRate, setTaxRate] = useState(() => Number(localStorage.getItem('taxRate') || '20'));
+  const [hourlyRate, setHourlyRate] = useState(25);
+  const [currency, setCurrency] = useState('$');
+  const [dailyGoal, setDailyGoal] = useState(8);
+  const [weeklyGoal, setWeeklyGoal] = useState(40);
+  const [taxRate, setTaxRate] = useState(20);
   
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [activityView, setActivityView] = useState<'weekly' | 'timeline' | 'monthly' | 'yearly'>('weekly');
@@ -45,6 +45,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
 
   useEffect(() => {
     fetchEntries();
+    fetchSettings();
     
     // Tick clock every second
     const interval = setInterval(() => {
@@ -62,12 +63,25 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     setLoading(false);
   };
 
-  const saveSettings = () => {
-    localStorage.setItem('hourlyRate', hourlyRate.toString());
-    localStorage.setItem('currency', currency);
-    localStorage.setItem('dailyGoal', dailyGoal.toString());
-    localStorage.setItem('weeklyGoal', weeklyGoal.toString());
-    localStorage.setItem('taxRate', taxRate.toString());
+  const fetchSettings = async () => {
+    const res = await fetch('/api/settings');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.hourlyRate !== undefined) setHourlyRate(data.hourlyRate);
+      if (data.currency !== undefined) setCurrency(data.currency);
+      if (data.dailyGoal !== undefined) setDailyGoal(data.dailyGoal);
+      if (data.weeklyGoal !== undefined) setWeeklyGoal(data.weeklyGoal);
+      if (data.taxRate !== undefined) setTaxRate(data.taxRate);
+    }
+  };
+
+  const saveSettings = async () => {
+    const payload = { hourlyRate, currency, dailyGoal, weeklyGoal, taxRate };
+    await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
     alert('Settings saved!');
   };
 
@@ -163,18 +177,6 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const todayEarnings = (today ? today.totalWorkedMs : 0) / (1000 * 60 * 60) * hourlyRate;
 
   // Calculate insights
-  const busiestDay = summaries.slice(0, 30).reduce((prev, current) => {
-    return (prev && prev.totalWorkedMs > current.totalWorkedMs) ? prev : current;
-  }, summaries[0]);
-
-  let maxStreak = 0;
-  let currentStreak = 0;
-  for (let i = 0; i < summaries.length; i++) {
-    if (summaries[i].totalWorkedMs > 0) currentStreak++;
-    else currentStreak = 0;
-    maxStreak = Math.max(maxStreak, currentStreak);
-  }
-
   const safeDailyGoal = dailyGoal || 8;
   const safeWeeklyGoal = weeklyGoal || 40;
 
@@ -185,11 +187,18 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const daysPassed = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const remainingDays = Math.max(0, daysInMonth - daysPassed);
-  const projectedMonthly = monthGross + (remainingDays / 7) * safeWeeklyGoal * hourlyRate;
+  const expectedRemaining = (remainingDays / 7) * safeWeeklyGoal * hourlyRate;
   
   const weekGross = totalWeekEarnings;
   const weekTax = weekGross * (taxRate / 100);
   const weekNet = weekGross - weekTax;
+
+  const thisYearSummaries = summaries.filter(s => parseSafeDate(s.date).getFullYear() === now.getFullYear());
+  const yearTotalMs = thisYearSummaries.reduce((acc, s) => acc + s.totalWorkedMs, 0);
+  const yearGross = (yearTotalMs / (1000 * 3600)) * hourlyRate;
+  
+  const daysWorkedThisYear = thisYearSummaries.filter(s => s.totalWorkedMs > 0).length;
+  const avgDailyEarnings = daysWorkedThisYear > 0 ? yearGross / daysWorkedThisYear : 0;
 
   const todayHours = (today?.totalWorkedMs || 0) / (1000 * 3600);
   const goalProgress = isNaN(todayHours) ? 0 : Math.min((todayHours / safeDailyGoal) * 100, 100);
@@ -275,8 +284,8 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
                   <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="relative w-64 h-64 flex items-center justify-center mb-6 drop-shadow-[0_0_30px_rgba(99,102,241,0.2)]">
-                    <svg className="absolute inset-0 w-full h-full -rotate-90">
+                  <div className="relative w-full max-w-[16rem] aspect-square flex items-center justify-center mb-6 drop-shadow-[0_0_30px_rgba(99,102,241,0.2)] mx-auto">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 256 256">
                       {/* Weekly Goal Ring (Outer) */}
                       <circle cx="128" cy="128" r="116" className="stroke-white/5 fill-none" strokeWidth="6" />
                       <circle 
@@ -352,47 +361,46 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-3xl p-8 transform transition-transform hover:scale-[1.02]">
-                  <h3 className="text-emerald-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-emerald-400" /> Weekly Earnings
+                <div className="bg-gradient-to-br from-emerald-500/5 to-indigo-500/5 rounded-3xl border border-white/10 p-8 transform transition-transform hover:scale-[1.02] flex flex-col gap-6 w-full">
+                  <h3 className="text-white text-sm uppercase tracking-widest flex items-center gap-2 font-medium">
+                    <DollarSign className="w-4 h-4 text-emerald-400" /> Financial Dashboard
                   </h3>
-                  <div className="flex justify-between items-baseline mb-2">
-                    <AnimatedNumber 
-                      value={weekGross}
-                      formatter={(v) => `${currency}${v.toFixed(2)}`}
-                      className="text-4xl font-bold text-white font-mono"
-                    />
-                    <span className="text-emerald-400 text-xs font-bold font-mono">GROSS</span>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Est. Tax (-{taxRate}%)</span>
-                      <span className="text-red-400 font-mono">-{currency}{weekTax.toFixed(2)}</span>
+                  
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-6">
+                    <div className="col-span-2 sm:col-span-1">
+                      <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Month to Date</p>
+                      <AnimatedNumber 
+                        value={monthGross}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
+                        className="text-3xl font-bold text-white font-mono"
+                      />
                     </div>
-                    <div className="flex justify-between items-center text-sm pt-2 border-t border-emerald-500/10">
-                      <span className="text-emerald-400 font-bold">Net Earnings</span>
-                      <span className="text-emerald-400 font-mono font-bold">{currency}{weekNet.toFixed(2)}</span>
+                    <div className="col-span-2 sm:col-span-1">
+                      <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Weekly Net (Est)</p>
+                      <AnimatedNumber 
+                        value={weekNet}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
+                        className="text-3xl font-bold text-emerald-400 font-mono"
+                      />
                     </div>
-                  </div>
-                </div>
+                    
+                    <div className="col-span-2 border-t border-white/5 pt-4"></div>
 
-                <div className="bg-gradient-to-br from-indigo-500/10 to-transparent rounded-3xl border border-indigo-500/20 p-8 transform transition-transform hover:scale-[1.02]">
-                  <h3 className="text-indigo-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <Brain className="w-4 h-4 text-indigo-400" /> Financial Projections
-                  </h3>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Month to Date</span>
-                      <span className="text-white font-mono">{currency}{monthGross.toFixed(2)}</span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Est. Remaining</p>
+                      <p className="text-indigo-400 font-mono text-sm">{currency}{expectedRemaining.toFixed(4)}</p>
                     </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400 flex items-center justify-between w-full">
-                        <span>Projected Month</span>
-                        <span className="text-indigo-400 font-mono font-bold">{currency}{projectedMonthly.toFixed(2)}</span>
-                      </span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Weekly Gross</p>
+                      <p className="text-slate-300 font-mono text-sm">{currency}{weekGross.toFixed(4)}</p>
                     </div>
-                    <div className="flex justify-between items-center text-sm border-t border-indigo-500/20 pt-4 mt-2">
-                       <span className="text-slate-500 text-xs text-center w-full">Based on {safeWeeklyGoal}h remaining weekly goal ({remainingDays} days left)</span>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Year To Date</p>
+                      <p className="text-emerald-300 font-mono text-sm">{currency}{yearGross.toFixed(4)}</p>
+                    </div>
+                    <div className="col-span-1 space-y-1">
+                      <p className="text-slate-500 text-xs uppercase tracking-wider">Avg Daily</p>
+                      <p className="text-amber-300 font-mono text-sm">{currency}{avgDailyEarnings.toFixed(4)}</p>
                     </div>
                   </div>
                 </div>

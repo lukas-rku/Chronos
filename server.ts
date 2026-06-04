@@ -36,11 +36,13 @@ app.use(
 import fs from 'fs';
 
 const dbPath = path.join(process.cwd(), 'database.json');
-let dbInstance: { users: any[], time_entries: any[] } = { users: [], time_entries: [] };
+let dbInstance: { users: any[], time_entries: any[], settings: Record<string, any> } = { users: [], time_entries: [], settings: {} };
 
 try {
   if (fs.existsSync(dbPath)) {
-    dbInstance = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    const raw = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    dbInstance = { ...dbInstance, ...raw };
+    if (!dbInstance.settings) dbInstance.settings = {};
   }
 } catch (err) {
   console.warn('Could not read database.json, starting fresh.');
@@ -242,6 +244,17 @@ app.get('/api/me', requireAuth, async (req, res) => {
   } catch(e) {
     res.status(500).json({error: 'Server error'});
   }
+});
+
+app.get('/api/settings', requireAuth, (req, res) => {
+  const settings = dbInstance.settings[req.session.userId!] || {};
+  res.json(settings);
+});
+
+app.put('/api/settings', requireAuth, (req, res) => {
+  dbInstance.settings[req.session.userId!] = { ...dbInstance.settings[req.session.userId!], ...req.body };
+  saveDb();
+  res.json({ success: true, settings: dbInstance.settings[req.session.userId!] });
 });
 
 app.post('/api/logout', (req, res) => {
