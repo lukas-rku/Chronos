@@ -8,8 +8,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function parseSafeDate(timestamp: string): Date {
+  if (!timestamp) return new Date();
   const safeStr = timestamp.replace(' ', 'T');
-  return safeStr.endsWith('Z') ? new Date(safeStr) : new Date(safeStr + 'Z');
+  const finalStr = safeStr.endsWith('Z') ? safeStr : safeStr + 'Z';
+  const d = new Date(finalStr);
+  if (isNaN(d.getTime())) return new Date();
+  return d;
 }
 
 export interface TimeBlock {

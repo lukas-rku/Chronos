@@ -6,7 +6,6 @@ import { format, parseISO } from 'date-fns';
 import { AnimatedNumber } from './AnimatedNumber';
 import { WeeklyTimeline } from './WeeklyTimeline';
 import { CalendarGrid } from './CalendarGrid';
-import { AmbientSoundscape } from './AmbientSoundscape';
 import {
   BarChart,
   Bar,
@@ -25,6 +24,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '$');
   const [dailyGoal, setDailyGoal] = useState(() => Number(localStorage.getItem('dailyGoal') || '8'));
   const [weeklyGoal, setWeeklyGoal] = useState(() => Number(localStorage.getItem('weeklyGoal') || '40'));
+  const [taxRate, setTaxRate] = useState(() => Number(localStorage.getItem('taxRate') || '20'));
   
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [activityView, setActivityView] = useState<'weekly' | 'timeline' | 'monthly' | 'yearly'>('weekly');
@@ -41,8 +41,6 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
   const [editType, setEditType] = useState('');
-
-  const [currentTask, setCurrentTask] = useState(() => localStorage.getItem('currentTask') || '');
 
   useEffect(() => {
     fetchEntries();
@@ -68,6 +66,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     localStorage.setItem('currency', currency);
     localStorage.setItem('dailyGoal', dailyGoal.toString());
     localStorage.setItem('weeklyGoal', weeklyGoal.toString());
+    localStorage.setItem('taxRate', taxRate.toString());
     alert('Settings saved!');
   };
 
@@ -85,8 +84,9 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     e.preventDefault();
     if (!manualDate || !manualTime) return;
     
-    // SQLite format: YYYY-MM-DD HH:mm:ss
-    const timestamp = `${manualDate} ${manualTime}:00`;
+    // Construct local date and send ISO string
+    const localDate = new Date(`${manualDate}T${manualTime}:00`);
+    const timestamp = localDate.toISOString();
     
     setLoading(true);
     await fetch('/api/manual_entry', {
@@ -103,7 +103,10 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     e.preventDefault();
     if (!editingEntry || !editDate || !editTime) return;
     
-    const timestamp = `${editDate} ${editTime}:00`;
+    // Construct local date and send ISO string
+    const localDate = new Date(`${editDate}T${editTime}:00`);
+    const timestamp = localDate.toISOString();
+    
     setLoading(true);
     await fetch(`/api/entries/${editingEntry.id}`, {
       method: 'PUT',
@@ -171,16 +174,31 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     maxStreak = Math.max(maxStreak, currentStreak);
   }
 
+  const thisMonthSummaries = summaries.filter(s => parseSafeDate(s.date).getMonth() === now.getMonth() && parseSafeDate(s.date).getFullYear() === now.getFullYear());
+  const monthTotalMs = thisMonthSummaries.reduce((acc, s) => acc + s.totalWorkedMs, 0);
+  const monthGross = (monthTotalMs / (1000 * 3600)) * hourlyRate;
+  
+  const daysPassed = now.getDate();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projectedMonthly = monthGross > 0 ? (monthGross / daysPassed) * daysInMonth : 0;
+  
+  const weekGross = totalWeekEarnings;
+  const weekTax = weekGross * (taxRate / 100);
+  const weekNet = weekGross - weekTax;
+
+  const safeDailyGoal = dailyGoal || 8;
+  const safeWeeklyGoal = weeklyGoal || 40;
+
   const todayHours = (today?.totalWorkedMs || 0) / (1000 * 3600);
-  const goalProgress = Math.min((todayHours / dailyGoal) * 100, 100);
-  const weeklyGoalProgress = Math.min((totalWeekMs / (1000 * 3600)) / weeklyGoal * 100, 100);
+  const goalProgress = isNaN(todayHours) ? 0 : Math.min((todayHours / safeDailyGoal) * 100, 100);
+  const weeklyGoalProgress = isNaN(totalWeekMs) ? 0 : Math.min((totalWeekMs / (1000 * 3600)) / safeWeeklyGoal * 100, 100);
 
   // Calculate current session duration
   let currentSessionMs = 0;
   if (isClockedIn && entries[0]) {
     // If clocked in, the session started at the last 'in' or 'break_end'
-    const lastStart = new Date(entries[0].timestamp.replace(' ', 'T') + (entries[0].timestamp.endsWith('Z') ? '' : 'Z'));
-    currentSessionMs = now.getTime() - lastStart.getTime();
+    const lastStart = parseSafeDate(entries[0].timestamp);
+    currentSessionMs = Math.max(0, now.getTime() - lastStart.getTime());
   }
 
   return (
@@ -233,15 +251,12 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-4 self-start sm:self-auto">
-            <AmbientSoundscape />
-            <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
-            </div>
+          <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl self-start sm:self-auto">
+            <span className="flex h-2 w-2 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
           </div>
         </header>
 
@@ -255,36 +270,36 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
                   <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="relative w-56 h-56 flex items-center justify-center mb-6">
+                  <div className="relative w-64 h-64 flex items-center justify-center mb-6 drop-shadow-[0_0_30px_rgba(99,102,241,0.2)]">
                     <svg className="absolute inset-0 w-full h-full -rotate-90">
                       {/* Weekly Goal Ring (Outer) */}
-                      <circle cx="112" cy="112" r="102" className="stroke-white/5 fill-none" strokeWidth="6" />
+                      <circle cx="128" cy="128" r="116" className="stroke-white/5 fill-none" strokeWidth="6" />
                       <circle 
-                        cx="112" cy="112" r="102" 
-                        className="stroke-purple-600 fill-none transition-all duration-1000 ease-out" 
+                        cx="128" cy="128" r="116" 
+                        className="stroke-purple-600 fill-none transition-all duration-1000 ease-out drop-shadow-[0_0_8px_rgba(147,51,234,0.5)]" 
                         strokeWidth="6"
                         strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 102}
-                        strokeDashoffset={2 * Math.PI * 102 * (1 - weeklyGoalProgress / 100)}
+                        strokeDasharray={2 * Math.PI * 116}
+                        strokeDashoffset={2 * Math.PI * 116 * (1 - (weeklyGoalProgress || 0) / 100)}
                       />
                       
                       {/* Daily Goal Ring (Inner) */}
-                      <circle cx="112" cy="112" r="86" className="stroke-white/5 fill-none" strokeWidth="6" />
+                      <circle cx="128" cy="128" r="98" className="stroke-white/5 fill-none" strokeWidth="8" />
                       <circle 
-                        cx="112" cy="112" r="86" 
-                        className="stroke-indigo-500 fill-none transition-all duration-1000 ease-out" 
-                        strokeWidth="6"
+                        cx="128" cy="128" r="98" 
+                        className="stroke-indigo-500 fill-none transition-all duration-1000 ease-out drop-shadow-[0_0_12px_rgba(99,102,241,0.8)]" 
+                        strokeWidth="8"
                         strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 86}
-                        strokeDashoffset={2 * Math.PI * 86 * (1 - goalProgress / 100)}
+                        strokeDasharray={2 * Math.PI * 98}
+                        strokeDashoffset={2 * Math.PI * 98 * (1 - (goalProgress || 0) / 100)}
                       />
                     </svg>
                     <div className="flex flex-col items-center">
-                      <div className="text-4xl font-mono font-bold text-white mb-1 transition-all duration-200">
+                      <div className="text-4xl font-mono font-bold text-white mb-1 transition-all duration-200 tracking-tighter">
                         {today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}
                       </div>
                       <div className="text-xs font-mono text-indigo-300">
-                        Goal: {dailyGoal}h ({goalProgress.toFixed(0)}%)
+                        {goalProgress.toFixed(0)}% Daily Goal
                       </div>
                     </div>
                   </div>
@@ -292,26 +307,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   {today && today.totalBreakMs > 0 ? (
                     <p className="text-slate-400 text-sm mb-2 font-mono">Break: {formatDuration(today.totalBreakMs)}</p>
                   ) : (
-                    <p className="text-slate-400 text-sm mb-2">Ready to work</p>
+                    <p className="text-slate-400 text-sm mb-2 opacity-50">Ready to work</p>
                   )}
                   {isClockedIn && (
-                    <p className="text-xs text-emerald-400 font-mono mb-2 animate-pulse">
+                    <p className="text-xs text-emerald-400 font-mono mb-2 animate-pulse bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
                       Session: {formatDuration(currentSessionMs)}
                     </p>
                   )}
-
-                  <div className="w-full mb-4">
-                    <input 
-                      type="text" 
-                      placeholder="What are you focusing on?"
-                      value={currentTask}
-                      onChange={(e) => {
-                        setCurrentTask(e.target.value);
-                        localStorage.setItem('currentTask', e.target.value);
-                      }}
-                      className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-center text-indigo-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
-                    />
-                  </div>
 
                   <div className="grid grid-cols-1 w-full gap-3 mt-4">
                     {!isClockedIn && !isOnBreak ? (
@@ -345,44 +347,47 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-indigo-600/20 to-purple-600/20 rounded-3xl border border-white/10 p-8">
-                  <h3 className="text-slate-300 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <DollarSign className="w-4 h-4 text-emerald-400" /> Earnings Estimator
+                <div className="bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20 rounded-3xl p-8 transform transition-transform hover:scale-[1.02]">
+                  <h3 className="text-emerald-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-400" /> Weekly Earnings
                   </h3>
-                  <div className="flex justify-between items-baseline mb-2 transition-all duration-300 cursor-default">
+                  <div className="flex justify-between items-baseline mb-2">
                     <AnimatedNumber 
-                      value={totalWeekEarnings}
-                      formatter={(v) => `${currency}${v.toFixed(4)}`}
+                      value={weekGross}
+                      formatter={(v) => `${currency}${v.toFixed(2)}`}
                       className="text-4xl font-bold text-white font-mono"
                     />
-                    <span className="text-emerald-400 text-xs font-bold font-mono">THIS WEEK</span>
+                    <span className="text-emerald-400 text-xs font-bold font-mono">GROSS</span>
                   </div>
-                  <div className="mt-4 text-sm text-slate-400">
-                    Today: <AnimatedNumber 
-                      value={todayEarnings}
-                      formatter={(v) => `${currency}${v.toFixed(4)}`}
-                      className="text-white font-mono"
-                    />
+                  <div className="mt-4 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Est. Tax (-{taxRate}%)</span>
+                      <span className="text-red-400 font-mono">-{currency}{weekTax.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm pt-2 border-t border-emerald-500/10">
+                      <span className="text-emerald-400 font-bold">Net Earnings</span>
+                      <span className="text-emerald-400 font-mono font-bold">{currency}{weekNet.toFixed(2)}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-white/5 rounded-3xl border border-white/10 p-8">
-                  <h3 className="text-slate-300 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
-                    <Brain className="w-4 h-4 text-indigo-400" /> Key Insights
+                <div className="bg-gradient-to-br from-indigo-500/10 to-transparent rounded-3xl border border-indigo-500/20 p-8 transform transition-transform hover:scale-[1.02]">
+                  <h3 className="text-indigo-400 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-indigo-400" /> Financial Projections
                   </h3>
                   <div className="space-y-4">
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Peak Day (30d)</span>
-                      <span className="text-white font-mono text-xs">{busiestDay ? format(parseSafeDate(busiestDay.date), 'MMM d') : '-'}</span>
+                      <span className="text-slate-400">Month to Date</span>
+                      <span className="text-white font-mono">{currency}{monthGross.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-500">Peak Hours</span>
-                      <span className="text-indigo-400 font-mono font-bold text-xs">{busiestDay ? (busiestDay.totalWorkedMs / (1000*3600)).toFixed(1) + 'h' : '-'}</span>
+                      <span className="text-slate-400">Projected Month</span>
+                      <span className="text-indigo-400 font-mono font-bold">{currency}{projectedMonthly.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between items-center text-sm border-t border-white/5 pt-4 mt-2">
-                      <span className="text-slate-500 flex justify-between w-full">
-                        <span>Max Streak</span>
-                        <span className="text-amber-400 font-bold">{maxStreak} days</span>
+                    <div className="flex justify-between items-center text-sm border-t border-indigo-500/20 pt-4 mt-2">
+                      <span className="text-slate-400">Top Day (30d)</span>
+                      <span className="text-amber-400 font-bold font-mono">
+                        {busiestDay ? `${format(parseSafeDate(busiestDay.date), 'MMM d')} (${currency}${(busiestDay.totalWorkedMs / (1000*3600) * hourlyRate).toFixed(0)})` : '-'}
                       </span>
                     </div>
                   </div>
@@ -477,10 +482,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       Recent Actions
                     </h3>
                     <div className="flex gap-2">
-                      <button onClick={handleExportCSV} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                      <button onClick={handleExportCSV} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors" title="Export CSV">
                         <Download className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setShowManualModal(true)} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                      <button onClick={() => alert('Invoice generator coming soon. It will export a polished PDF based on month-to-date earnings.')} className="p-2 rounded-xl border border-indigo-500/30 text-indigo-400 hover:text-white hover:bg-indigo-500/20 transition-colors" title="Generate Invoice">
+                        <DollarSign className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setShowManualModal(true)} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors" title="Add Entry">
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
@@ -579,6 +587,30 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     value={dailyGoal}
                     onChange={e => setDailyGoal(Number(e.target.value))}
                     className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
+                  />
+                </div>
+                <div className="space-y-4 col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <Target className="w-4 h-4 text-purple-400" /> Weekly Focus Goal (Hours)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={weeklyGoal}
+                    onChange={e => setWeeklyGoal(Number(e.target.value))}
+                    className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-purple-500 focus:bg-white/5 font-mono transition-colors"
+                  />
+                </div>
+                <div className="space-y-4 col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-emerald-400" /> Estimated Tax Rate (%)
+                  </label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="100"
+                    value={taxRate}
+                    onChange={e => setTaxRate(Number(e.target.value))}
+                    className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-emerald-500 focus:bg-white/5 font-mono transition-colors"
                   />
                 </div>
               </div>
