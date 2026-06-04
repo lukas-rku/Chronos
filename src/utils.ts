@@ -132,7 +132,7 @@ export function calculateDailySummaries(entries: TimeEntry[], now: Date = new Da
     }
   });
 
-  return Object.values(summaries).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return Object.values(summaries).sort((a, b) => parseSafeDate(b.date).getTime() - parseSafeDate(a.date).getTime());
 }
 
 export function formatDuration(ms: number): string {

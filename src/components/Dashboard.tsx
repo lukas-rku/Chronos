@@ -6,6 +6,7 @@ import { format, parseISO } from 'date-fns';
 import { AnimatedNumber } from './AnimatedNumber';
 import { WeeklyTimeline } from './WeeklyTimeline';
 import { CalendarGrid } from './CalendarGrid';
+import { InstallPWA } from './InstallPWA';
 import {
   BarChart,
   Bar,
@@ -174,20 +175,21 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     maxStreak = Math.max(maxStreak, currentStreak);
   }
 
+  const safeDailyGoal = dailyGoal || 8;
+  const safeWeeklyGoal = weeklyGoal || 40;
+
   const thisMonthSummaries = summaries.filter(s => parseSafeDate(s.date).getMonth() === now.getMonth() && parseSafeDate(s.date).getFullYear() === now.getFullYear());
   const monthTotalMs = thisMonthSummaries.reduce((acc, s) => acc + s.totalWorkedMs, 0);
   const monthGross = (monthTotalMs / (1000 * 3600)) * hourlyRate;
   
   const daysPassed = now.getDate();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const projectedMonthly = monthGross > 0 ? (monthGross / daysPassed) * daysInMonth : 0;
+  const remainingDays = Math.max(0, daysInMonth - daysPassed);
+  const projectedMonthly = monthGross + (remainingDays / 7) * safeWeeklyGoal * hourlyRate;
   
   const weekGross = totalWeekEarnings;
   const weekTax = weekGross * (taxRate / 100);
   const weekNet = weekGross - weekTax;
-
-  const safeDailyGoal = dailyGoal || 8;
-  const safeWeeklyGoal = weeklyGoal || 40;
 
   const todayHours = (today?.totalWorkedMs || 0) / (1000 * 3600);
   const goalProgress = isNaN(todayHours) ? 0 : Math.min((todayHours / safeDailyGoal) * 100, 100);
@@ -251,12 +253,15 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl self-start sm:self-auto">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
+          <div className="flex items-center gap-4 self-start sm:self-auto">
+            <InstallPWA />
+            <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
+            </div>
           </div>
         </header>
 
@@ -381,14 +386,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <span className="text-white font-mono">{currency}{monthGross.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm">
-                      <span className="text-slate-400">Projected Month</span>
-                      <span className="text-indigo-400 font-mono font-bold">{currency}{projectedMonthly.toFixed(2)}</span>
+                      <span className="text-slate-400 flex items-center justify-between w-full">
+                        <span>Projected Month</span>
+                        <span className="text-indigo-400 font-mono font-bold">{currency}{projectedMonthly.toFixed(2)}</span>
+                      </span>
                     </div>
                     <div className="flex justify-between items-center text-sm border-t border-indigo-500/20 pt-4 mt-2">
-                      <span className="text-slate-400">Top Day (30d)</span>
-                      <span className="text-amber-400 font-bold font-mono">
-                        {busiestDay ? `${format(parseSafeDate(busiestDay.date), 'MMM d')} (${currency}${(busiestDay.totalWorkedMs / (1000*3600) * hourlyRate).toFixed(0)})` : '-'}
-                      </span>
+                       <span className="text-slate-500 text-xs text-center w-full">Based on {safeWeeklyGoal}h remaining weekly goal ({remainingDays} days left)</span>
                     </div>
                   </div>
                 </div>
@@ -499,13 +503,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                        const nextEntry = entries[i+1];
                        let progressText = '';
                        if (entry.type === 'out' && nextEntry && nextEntry.type === 'in') {
-                         const entryDate = entry.timestamp.endsWith('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp.replace(' ', 'T') + 'Z');
-                         const nextEntryDate = nextEntry.timestamp.endsWith('Z') ? new Date(nextEntry.timestamp) : new Date(nextEntry.timestamp.replace(' ', 'T') + 'Z');
-                         const diff = entryDate.getTime() - nextEntryDate.getTime();
+                         const entryDate = parseSafeDate(entry.timestamp);
+                         const nextEntryDate = parseSafeDate(nextEntry.timestamp);
+                         const diff = Math.max(0, entryDate.getTime() - nextEntryDate.getTime());
                          progressText = `[Worked ${formatDuration(diff)}]`;
                        }
 
-                       const displayDate = entry.timestamp.endsWith('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp.replace(' ', 'T') + 'Z');
+                       const displayDate = parseSafeDate(entry.timestamp);
                        return (
                       <div key={entry.id} className="flex justify-between items-center p-4 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/5 transition-colors group">
                         <div className="flex items-center gap-3">
