@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { User, TimeEntry } from '../types';
-import { calculateDailySummaries, formatDuration, formatHourlyPay, cn } from '../utils';
-import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus } from 'lucide-react';
+import { calculateDailySummaries, formatDuration, formatHourlyPay, getDailyBlocks, cn } from '../utils';
+import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus, Target } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { AnimatedNumber } from './AnimatedNumber';
+import { DailyTimeline } from './DailyTimeline';
+import { CalendarGrid } from './CalendarGrid';
 import {
   BarChart,
   Bar,
@@ -19,8 +22,11 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   
   const [hourlyRate, setHourlyRate] = useState(() => Number(localStorage.getItem('hourlyRate') || '25'));
   const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '$');
+  const [dailyGoal, setDailyGoal] = useState(() => Number(localStorage.getItem('dailyGoal') || '8'));
   
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
+  const [activityView, setActivityView] = useState<'weekly' | 'timeline' | 'monthly' | 'yearly'>('weekly');
+  const [chartMode, setChartMode] = useState<'hours' | 'earnings'>('hours');
   const [now, setNow] = useState(new Date());
 
   const [showManualModal, setShowManualModal] = useState(false);
@@ -50,6 +56,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const saveSettings = () => {
     localStorage.setItem('hourlyRate', hourlyRate.toString());
     localStorage.setItem('currency', currency);
+    localStorage.setItem('dailyGoal', dailyGoal.toString());
     alert('Settings saved!');
   };
 
@@ -105,12 +112,29 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const isClockedIn = currentStatus === 'in' || currentStatus === 'break_end';
   const isOnBreak = currentStatus === 'break_start';
 
-  const chartData = summaries.slice(0, 7).reverse().map(s => ({
-    name: format(parseISO(s.date), 'EEE'),
-    hours: s.totalWorkedMs / (1000 * 60 * 60)
-  }));
+  const chartData = summaries.slice(0, 7).reverse().map(s => {
+    const hours = s.totalWorkedMs / (1000 * 60 * 60);
+    return {
+      name: format(parseISO(s.date), 'EEE'),
+      hours,
+      earnings: hours * hourlyRate
+    };
+  });
 
   const totalWeekMs = summaries.slice(0, 7).reduce((acc, curr) => acc + curr.totalWorkedMs, 0);
+  const totalWeekEarnings = (totalWeekMs / (1000 * 60 * 60)) * hourlyRate;
+  const todayEarnings = (today ? today.totalWorkedMs : 0) / (1000 * 60 * 60) * hourlyRate;
+
+  const todayHours = (today?.totalWorkedMs || 0) / (1000 * 3600);
+  const goalProgress = Math.min((todayHours / dailyGoal) * 100, 100);
+  
+  // Calculate current session duration
+  let currentSessionMs = 0;
+  if (isClockedIn && entries[0]) {
+    // If clocked in, the session started at the last 'in' or 'break_end'
+    const lastStart = new Date(entries[0].timestamp.replace(' ', 'T') + (entries[0].timestamp.endsWith('Z') ? '' : 'Z'));
+    currentSessionMs = now.getTime() - lastStart.getTime();
+  }
 
   return (
     <div className="w-full h-full bg-[#050505] text-slate-200 font-sans flex overflow-hidden">
@@ -181,13 +205,37 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
                   <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="text-5xl font-mono font-bold text-white mb-1 transition-all duration-200">
-                    {today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}
+                  <div className="relative w-48 h-48 flex items-center justify-center mb-6">
+                    <svg className="absolute inset-0 w-full h-full -rotate-90">
+                      <circle cx="96" cy="96" r="90" className="stroke-white/5 fill-none" strokeWidth="6" />
+                      <circle 
+                        cx="96" cy="96" r="90" 
+                        className="stroke-indigo-500 fill-none transition-all duration-1000 ease-out" 
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 90}
+                        strokeDashoffset={2 * Math.PI * 90 * (1 - goalProgress / 100)}
+                      />
+                    </svg>
+                    <div className="flex flex-col items-center">
+                      <div className="text-4xl font-mono font-bold text-white mb-1 transition-all duration-200">
+                        {today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}
+                      </div>
+                      <div className="text-xs font-mono text-indigo-300">
+                        Goal: {dailyGoal}h ({goalProgress.toFixed(0)}%)
+                      </div>
+                    </div>
                   </div>
+
                   {today && today.totalBreakMs > 0 ? (
-                    <p className="text-slate-400 text-sm mt-2 font-mono">Break: {formatDuration(today.totalBreakMs)}</p>
+                    <p className="text-slate-400 text-sm mb-2 font-mono">Break: {formatDuration(today.totalBreakMs)}</p>
                   ) : (
-                    <p className="text-slate-400 text-sm mt-2">Ready to work</p>
+                    <p className="text-slate-400 text-sm mb-2">Ready to work</p>
+                  )}
+                  {isClockedIn && (
+                    <p className="text-xs text-emerald-400 font-mono mb-4 animate-pulse">
+                      Session: {formatDuration(currentSessionMs)}
+                    </p>
                   )}
 
                   <div className="grid grid-cols-1 w-full gap-3 mt-8">
@@ -227,11 +275,19 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     <DollarSign className="w-4 h-4 text-emerald-400" /> Earnings Estimator
                   </h3>
                   <div className="flex justify-between items-baseline mb-2 transition-all duration-300 cursor-default">
-                    <span className="text-4xl font-bold text-white font-mono">{formatHourlyPay(totalWeekMs, hourlyRate, currency)}</span>
+                    <AnimatedNumber 
+                      value={totalWeekEarnings}
+                      formatter={(v) => `${currency}${v.toFixed(4)}`}
+                      className="text-4xl font-bold text-white font-mono"
+                    />
                     <span className="text-emerald-400 text-xs font-bold font-mono">THIS WEEK</span>
                   </div>
                   <div className="mt-4 text-sm text-slate-400">
-                    Today: <span className="text-white font-mono">{formatHourlyPay(today?.totalWorkedMs || 0, hourlyRate, currency)}</span>
+                    Today: <AnimatedNumber 
+                      value={todayEarnings}
+                      formatter={(v) => `${currency}${v.toFixed(4)}`}
+                      className="text-white font-mono"
+                    />
                   </div>
                 </div>
               </div>
@@ -256,32 +312,56 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   </div>
                 </div>
 
-                <div className="bg-white/5 border border-white/10 rounded-3xl p-8 flex-1 flex flex-col min-h-[300px]">
-                  <div className="flex justify-between items-center mb-8">
+                <div className="bg-white/5 border border-white/10 rounded-3xl p-8 flex-1 flex flex-col min-h-[400px]">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                     <h3 className="text-lg font-medium text-white flex items-center gap-2">
                       <Activity className="w-5 h-5 text-indigo-400" />
-                      Weekly Activity
+                      Activity Overview
                     </h3>
+                    <div className="flex items-center gap-2 bg-black/20 p-1 rounded-xl">
+                      <button onClick={() => setActivityView('weekly')} className={cn("px-3 py-1 text-xs font-medium rounded-lg transition-colors", activityView === 'weekly' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>Weekly</button>
+                      <button onClick={() => setActivityView('monthly')} className={cn("px-3 py-1 text-xs font-medium rounded-lg transition-colors", activityView === 'monthly' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>Monthly</button>
+                      <button onClick={() => setActivityView('yearly')} className={cn("px-3 py-1 text-xs font-medium rounded-lg transition-colors", activityView === 'yearly' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>Yearly</button>
+                      <button onClick={() => setActivityView('timeline')} className={cn("px-3 py-1 text-xs font-medium rounded-lg transition-colors border-l border-white/5 ml-1 pl-4", activityView === 'timeline' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white')}>Timeline</button>
+                    </div>
                   </div>
                   
-                  <div className="flex-1 min-h-[200px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                        <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${val}h`} />
-                        <Tooltip 
-                          cursor={{fill: 'rgba(255,255,255,0.05)'}} 
-                          contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#f1f5f9' }}
-                          itemStyle={{ color: '#818cf8' }}
-                          formatter={(val: number) => [val.toFixed(2) + 'h', 'Worked']}
-                        />
-                        <Bar dataKey="hours" radius={[6, 6, 0, 0]}>
-                          {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.hours > 0 ? '#6366f1' : '#1e293b'} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className="flex-1 min-h-[200px] flex flex-col">
+                    {activityView === 'weekly' && (
+                      <>
+                        <div className="flex justify-end mb-4">
+                          <div className="flex items-center gap-2 bg-black/20 p-1 rounded-lg">
+                            <button onClick={() => setChartMode('hours')} className={cn("px-2 py-1 text-[10px] uppercase tracking-wider rounded transition-colors", chartMode === 'hours' ? 'bg-indigo-500/30 text-indigo-200' : 'text-slate-500 hover:text-white')}>Hours</button>
+                            <button onClick={() => setChartMode('earnings')} className={cn("px-2 py-1 text-[10px] uppercase tracking-wider rounded transition-colors", chartMode === 'earnings' ? 'bg-emerald-500/30 text-emerald-200' : 'text-slate-500 hover:text-white')}>Earnings</button>
+                          </div>
+                        </div>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                            <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => chartMode === 'hours' ? `${val}h` : `${currency}${val}`} />
+                            <Tooltip 
+                              cursor={{fill: 'rgba(255,255,255,0.05)'}} 
+                              contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#f1f5f9' }}
+                              itemStyle={{ color: chartMode === 'hours' ? '#818cf8' : '#34d399' }}
+                              formatter={(val: number) => [chartMode === 'hours' ? val.toFixed(2) + 'h' : currency + val.toFixed(2), chartMode === 'hours' ? 'Worked' : 'Earned']}
+                            />
+                            <Bar dataKey={chartMode} radius={[6, 6, 0, 0]}>
+                              {chartData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry[chartMode] > 0 ? (chartMode === 'hours' ? '#6366f1' : '#10b981') : '#1e293b'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </>
+                    )}
+                    
+                    {(activityView === 'monthly' || activityView === 'yearly') && (
+                      <CalendarGrid summaries={summaries} view={activityView} now={now} />
+                    )}
+
+                    {activityView === 'timeline' && (
+                      <DailyTimeline blocks={getDailyBlocks(entries, format(now, 'yyyy-MM-dd'), now)} />
+                    )}
                   </div>
                 </div>
 
@@ -361,6 +441,17 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     type="text" 
                     value={currency}
                     onChange={e => setCurrency(e.target.value)}
+                    className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
+                  />
+                </div>
+                <div className="space-y-4 col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <Target className="w-4 h-4 text-indigo-400" /> Daily Focus Goal (Hours)
+                  </label>
+                  <input 
+                    type="number" 
+                    value={dailyGoal}
+                    onChange={e => setDailyGoal(Number(e.target.value))}
                     className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
                   />
                 </div>

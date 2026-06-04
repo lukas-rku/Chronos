@@ -1,28 +1,82 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { TimeEntry, DaySummary } from './types';
-import { parseISO, differenceInMilliseconds, startOfDay, format } from 'date-fns';
+import { parseISO, differenceInMilliseconds, startOfDay, format, endOfDay } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+export function parseSafeDate(timestamp: string): Date {
+  const safeStr = timestamp.replace(' ', 'T');
+  return safeStr.endsWith('Z') ? new Date(safeStr) : new Date(safeStr + 'Z');
+}
+
+export interface TimeBlock {
+  type: 'work' | 'break';
+  start: Date;
+  end: Date;
+}
+
+export function getDailyBlocks(entries: TimeEntry[], dateStr: string, now: Date): TimeBlock[] {
+  // Sort oldest to newest
+  const sorted = [...entries].sort((a, b) => parseSafeDate(a.timestamp).getTime() - parseSafeDate(b.timestamp).getTime());
+  
+  // Filter entries for this day
+  const dayEntries = sorted.filter(e => format(parseSafeDate(e.timestamp), 'yyyy-MM-dd') === dateStr);
+  
+  const blocks: TimeBlock[] = [];
+  let lastIn: Date | null = null;
+  let lastBreak: Date | null = null;
+
+  dayEntries.forEach(entry => {
+    const time = parseSafeDate(entry.timestamp);
+    
+    switch (entry.type) {
+      case 'in':
+        if (!lastIn && !lastBreak) lastIn = time;
+        break;
+      case 'out':
+        if (lastIn) {
+          blocks.push({ type: 'work', start: lastIn, end: time });
+          lastIn = null;
+        }
+        break;
+      case 'break_start':
+        if (lastIn && !lastBreak) {
+          blocks.push({ type: 'work', start: lastIn, end: time });
+          lastIn = null;
+          lastBreak = time;
+        }
+        break;
+      case 'break_end':
+        if (lastBreak) {
+          blocks.push({ type: 'break', start: lastBreak, end: time });
+          lastBreak = null;
+          lastIn = time;
+        }
+        break;
+    }
+  });
+
+  // Handle ongoing tasks
+  if (lastIn) {
+    blocks.push({ type: 'work', start: lastIn, end: now });
+  } else if (lastBreak) {
+    blocks.push({ type: 'break', start: lastBreak, end: now });
+  }
+
+  return blocks;
 }
 
 export function calculateDailySummaries(entries: TimeEntry[], now: Date = new Date()): DaySummary[] {
   const summaries: Record<string, DaySummary> = {};
   
   // Sort entries oldest to newest
-  const sorted = [...entries].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  const sorted = [...entries].sort((a, b) => parseSafeDate(a.timestamp).getTime() - parseSafeDate(b.timestamp).getTime());
   
   sorted.forEach(entry => {
-    // If it's old format YYYY-MM-DD HH:mm:ss it will need 'Z' or parsing, but robustly parseISO handles it.
-    // However string manipulation is fragile.
-    let dateObj = entry.timestamp.includes('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp + 'Z');
-    if (entry.timestamp.includes('T') && !entry.timestamp.includes('Z')) {
-      dateObj = new Date(entry.timestamp); // keep local if it has T but no Z? Just standard new Date
-    }
-    const safeStr = entry.timestamp.replace(' ', 'T');
-    const finalDate = safeStr.endsWith('Z') ? new Date(safeStr) : new Date(safeStr + 'Z');
-    
+    const finalDate = parseSafeDate(entry.timestamp);
     const day = format(finalDate, 'yyyy-MM-dd');
     if (!summaries[day]) {
       summaries[day] = { date: day, totalWorkedMs: 0, totalBreakMs: 0, entries: [] };
@@ -36,9 +90,7 @@ export function calculateDailySummaries(entries: TimeEntry[], now: Date = new Da
     let lastBreak: Date | null = null;
 
     summary.entries.forEach(entry => {
-      // Make sure we parse as UTC if it's the old format without Z
-      const safeStr = entry.timestamp.replace(' ', 'T');
-      const time = safeStr.endsWith('Z') ? new Date(safeStr) : new Date(safeStr + 'Z');
+      const time = parseSafeDate(entry.timestamp);
       
       switch (entry.type) {
         case 'in':
