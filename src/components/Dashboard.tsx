@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { User, TimeEntry } from '../types';
 import { calculateDailySummaries, formatDuration, formatHourlyPay, getDailyBlocks, cn, parseSafeDate } from '../utils';
 import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus, Target, Edit2, Trash2, Zap, Brain } from 'lucide-react';
@@ -310,10 +311,10 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     </svg>
                     <div className="flex flex-col items-center">
                       <div className="text-3xl sm:text-4xl font-mono font-bold text-white mb-1 transition-all duration-200 tracking-tighter">
-                        {formatDuration(monthTotalMs)}
+                        {today ? formatDuration(today.totalWorkedMs) : '00:00:00'}
                       </div>
                       <div className="text-xs font-mono text-indigo-300">
-                        Monthly Total
+                        Today's Total
                       </div>
                     </div>
                   </div>
@@ -361,7 +362,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   </div>
                 </div>
 
-                <div className="bg-gradient-to-br from-emerald-500/5 to-indigo-500/5 rounded-3xl border border-white/10 p-8 transform transition-transform hover:scale-[1.02] flex flex-col gap-6 w-full">
+                <motion.div 
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                  whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                  className="bg-gradient-to-br from-emerald-500/5 to-indigo-500/5 rounded-3xl border border-white/10 p-8 flex flex-col gap-6 w-full shadow-2xl hover:border-indigo-500/30 transition-all duration-300"
+                >
                   <h3 className="text-white text-sm uppercase tracking-widest flex items-center gap-2 font-medium">
                     <DollarSign className="w-4 h-4 text-emerald-400" /> Financial Dashboard
                   </h3>
@@ -371,7 +378,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Month to Date</p>
                       <AnimatedNumber 
                         value={monthGross}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-3xl font-bold text-white font-mono"
                       />
                     </div>
@@ -379,7 +386,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-400 text-xs mb-1 uppercase tracking-wider">Weekly Net (Est)</p>
                       <AnimatedNumber 
                         value={weekNet}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-3xl font-bold text-emerald-400 font-mono"
                       />
                     </div>
@@ -390,7 +397,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Est. Remaining</p>
                       <AnimatedNumber 
                         value={expectedRemaining}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-indigo-400 font-mono text-sm"
                       />
                     </div>
@@ -398,7 +405,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Weekly Gross</p>
                       <AnimatedNumber 
                         value={weekGross}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-slate-300 font-mono text-sm"
                       />
                     </div>
@@ -406,7 +413,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Year To Date</p>
                       <AnimatedNumber 
                         value={yearGross}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-emerald-300 font-mono text-sm"
                       />
                     </div>
@@ -414,12 +421,12 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       <p className="text-slate-500 text-xs uppercase tracking-wider">Avg Daily</p>
                       <AnimatedNumber 
                         value={avgDailyEarnings}
-                        formatter={(v) => `${currency}${v.toFixed(2)}`}
+                        formatter={(v) => `${currency}${v.toFixed(4)}`}
                         className="text-amber-300 font-mono text-sm"
                       />
                     </div>
                   </div>
-                </div>
+                </motion.div>
               </div>
 
               {/* Detailed Dashboard */}
@@ -430,8 +437,8 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     <p className="text-2xl font-bold text-white font-mono">{formatDuration(totalWeekMs)}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
-                    <p className="text-slate-500 text-xs uppercase mb-1">Today's Total</p>
-                    <p className="text-2xl font-bold text-white font-mono">{today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}</p>
+                    <p className="text-slate-500 text-xs uppercase mb-1">Month Total</p>
+                    <p className="text-2xl font-bold text-white font-mono">{formatDuration(monthTotalMs)}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <p className="text-slate-500 text-xs uppercase mb-1">Current State</p>
