@@ -1,14 +1,15 @@
 import React from 'react';
 import { DaySummary } from '../types';
-import { format, eachDayOfInterval, startOfMonth, endOfMonth, isSameMonth, eachMonthOfInterval, startOfYear, endOfYear, getDaysInMonth } from 'date-fns';
+import { format, eachDayOfInterval, startOfMonth, endOfMonth, eachMonthOfInterval, startOfYear, endOfYear, getDaysInMonth } from 'date-fns';
 
 interface CalendarGridProps {
   summaries: DaySummary[];
   view: 'monthly' | 'yearly';
   now: Date;
+  onDaySelect?: (date: Date) => void;
 }
 
-export function CalendarGrid({ summaries, view, now }: CalendarGridProps) {
+export function CalendarGrid({ summaries, view, now, onDaySelect }: CalendarGridProps) {
   const summaryMap = new Map<string, DaySummary>();
   summaries.forEach(s => summaryMap.set(s.date, s));
 
@@ -34,12 +35,13 @@ export function CalendarGrid({ summaries, view, now }: CalendarGridProps) {
             const dateStr = format(day, 'yyyy-MM-dd');
             const summary = summaryMap.get(dateStr);
             const hours = summary ? summary.totalWorkedMs / (1000 * 3600) : 0;
-            const intensity = Math.min(hours / 8, 1); // 0 to 1
+            const intensity = Math.min(hours / 8, 1);
 
             return (
               <div 
                 key={dateStr}
-                className="relative rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden group flex flex-col justify-end p-2 transition-colors hover:border-indigo-500/30"
+                onClick={() => onDaySelect?.(day)}
+                className="relative cursor-pointer rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden group flex flex-col justify-end p-2 transition-colors hover:border-indigo-500/50 hover:bg-indigo-500/10"
               >
                 {hours > 0 && (
                   <div 
@@ -85,8 +87,9 @@ export function CalendarGrid({ summaries, view, now }: CalendarGridProps) {
             return (
               <div 
                 key={dateStr}
+                onClick={() => onDaySelect?.(day)}
                 title={`${dateStr}: ${hours.toFixed(1)}h`}
-                className="w-2 h-2 rounded-[2px]"
+                className="w-2 h-2 rounded-[2px] cursor-pointer hover:scale-150 hover:z-10 transition-transform"
                 style={{ 
                   backgroundColor: hours > 0 ? `rgba(99, 102, 241, ${0.2 + intensity * 0.8})` : 'rgba(255,255,255,0.05)'
                 }}
@@ -95,7 +98,7 @@ export function CalendarGrid({ summaries, view, now }: CalendarGridProps) {
           });
 
           return (
-            <div key={month.toISOString()} className="bg-white/[0.02] border border-white/5 rounded-xl p-4">
+            <div key={month.toISOString()} className="bg-white/[0.02] border border-white/5 rounded-xl p-4 transition-colors hover:border-indigo-500/20">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-xs font-bold text-slate-300">{format(month, 'MMM')}</span>
                 <span className="text-[10px] font-mono text-indigo-400">{totalHoursMonth > 0 ? `${totalHoursMonth.toFixed(1)}h` : ''}</span>

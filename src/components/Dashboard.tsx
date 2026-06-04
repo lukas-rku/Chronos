@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { User, TimeEntry } from '../types';
-import { calculateDailySummaries, formatDuration, formatHourlyPay, getDailyBlocks, cn } from '../utils';
-import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus, Target } from 'lucide-react';
+import { calculateDailySummaries, formatDuration, formatHourlyPay, getDailyBlocks, cn, parseSafeDate } from '../utils';
+import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus, Target, Edit2, Trash2, Zap, Brain } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { AnimatedNumber } from './AnimatedNumber';
-import { DailyTimeline } from './DailyTimeline';
+import { WeeklyTimeline } from './WeeklyTimeline';
 import { CalendarGrid } from './CalendarGrid';
+import { AmbientSoundscape } from './AmbientSoundscape';
 import {
   BarChart,
   Bar,
@@ -23,16 +24,25 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const [hourlyRate, setHourlyRate] = useState(() => Number(localStorage.getItem('hourlyRate') || '25'));
   const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '$');
   const [dailyGoal, setDailyGoal] = useState(() => Number(localStorage.getItem('dailyGoal') || '8'));
+  const [weeklyGoal, setWeeklyGoal] = useState(() => Number(localStorage.getItem('weeklyGoal') || '40'));
   
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
   const [activityView, setActivityView] = useState<'weekly' | 'timeline' | 'monthly' | 'yearly'>('weekly');
   const [chartMode, setChartMode] = useState<'hours' | 'earnings'>('hours');
   const [now, setNow] = useState(new Date());
+  const [timelineBaseDate, setTimelineBaseDate] = useState<Date>(new Date());
 
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualType, setManualType] = useState('in');
   const [manualDate, setManualDate] = useState('');
   const [manualTime, setManualTime] = useState('');
+
+  const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editTime, setEditTime] = useState('');
+  const [editType, setEditType] = useState('');
+
+  const [currentTask, setCurrentTask] = useState(() => localStorage.getItem('currentTask') || '');
 
   useEffect(() => {
     fetchEntries();
@@ -57,6 +67,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     localStorage.setItem('hourlyRate', hourlyRate.toString());
     localStorage.setItem('currency', currency);
     localStorage.setItem('dailyGoal', dailyGoal.toString());
+    localStorage.setItem('weeklyGoal', weeklyGoal.toString());
     alert('Settings saved!');
   };
 
@@ -85,6 +96,28 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     });
     
     setShowManualModal(false);
+    fetchEntries();
+  };
+
+  const handleEditEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEntry || !editDate || !editTime) return;
+    
+    const timestamp = `${editDate} ${editTime}:00`;
+    setLoading(true);
+    await fetch(`/api/entries/${editingEntry.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: editType, timestamp })
+    });
+    setEditingEntry(null);
+    fetchEntries();
+  };
+
+  const handleDeleteEntry = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this entry?')) return;
+    setLoading(true);
+    await fetch(`/api/entries/${id}`, { method: 'DELETE' });
     fetchEntries();
   };
 
@@ -125,9 +158,23 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
   const totalWeekEarnings = (totalWeekMs / (1000 * 60 * 60)) * hourlyRate;
   const todayEarnings = (today ? today.totalWorkedMs : 0) / (1000 * 60 * 60) * hourlyRate;
 
+  // Calculate insights
+  const busiestDay = summaries.slice(0, 30).reduce((prev, current) => {
+    return (prev && prev.totalWorkedMs > current.totalWorkedMs) ? prev : current;
+  }, summaries[0]);
+
+  let maxStreak = 0;
+  let currentStreak = 0;
+  for (let i = 0; i < summaries.length; i++) {
+    if (summaries[i].totalWorkedMs > 0) currentStreak++;
+    else currentStreak = 0;
+    maxStreak = Math.max(maxStreak, currentStreak);
+  }
+
   const todayHours = (today?.totalWorkedMs || 0) / (1000 * 3600);
   const goalProgress = Math.min((todayHours / dailyGoal) * 100, 100);
-  
+  const weeklyGoalProgress = Math.min((totalWeekMs / (1000 * 3600)) / weeklyGoal * 100, 100);
+
   // Calculate current session duration
   let currentSessionMs = 0;
   if (isClockedIn && entries[0]) {
@@ -186,12 +233,15 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl self-start sm:self-auto">
-            <span className="flex h-2 w-2 relative">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-            </span>
-            <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
+          <div className="flex items-center gap-4 self-start sm:self-auto">
+            <AmbientSoundscape />
+            <div className="flex items-center gap-4 bg-white/5 border border-white/10 px-4 py-2 rounded-full backdrop-blur-xl">
+              <span className="flex h-2 w-2 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              <span className="text-xs font-mono uppercase tracking-widest text-slate-300">System Online</span>
+            </div>
           </div>
         </header>
 
@@ -205,16 +255,28 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
                   <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="relative w-48 h-48 flex items-center justify-center mb-6">
+                  <div className="relative w-56 h-56 flex items-center justify-center mb-6">
                     <svg className="absolute inset-0 w-full h-full -rotate-90">
-                      <circle cx="96" cy="96" r="90" className="stroke-white/5 fill-none" strokeWidth="6" />
+                      {/* Weekly Goal Ring (Outer) */}
+                      <circle cx="112" cy="112" r="102" className="stroke-white/5 fill-none" strokeWidth="6" />
                       <circle 
-                        cx="96" cy="96" r="90" 
+                        cx="112" cy="112" r="102" 
+                        className="stroke-purple-600 fill-none transition-all duration-1000 ease-out" 
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 102}
+                        strokeDashoffset={2 * Math.PI * 102 * (1 - weeklyGoalProgress / 100)}
+                      />
+                      
+                      {/* Daily Goal Ring (Inner) */}
+                      <circle cx="112" cy="112" r="86" className="stroke-white/5 fill-none" strokeWidth="6" />
+                      <circle 
+                        cx="112" cy="112" r="86" 
                         className="stroke-indigo-500 fill-none transition-all duration-1000 ease-out" 
                         strokeWidth="6"
                         strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 90}
-                        strokeDashoffset={2 * Math.PI * 90 * (1 - goalProgress / 100)}
+                        strokeDasharray={2 * Math.PI * 86}
+                        strokeDashoffset={2 * Math.PI * 86 * (1 - goalProgress / 100)}
                       />
                     </svg>
                     <div className="flex flex-col items-center">
@@ -233,12 +295,25 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     <p className="text-slate-400 text-sm mb-2">Ready to work</p>
                   )}
                   {isClockedIn && (
-                    <p className="text-xs text-emerald-400 font-mono mb-4 animate-pulse">
+                    <p className="text-xs text-emerald-400 font-mono mb-2 animate-pulse">
                       Session: {formatDuration(currentSessionMs)}
                     </p>
                   )}
 
-                  <div className="grid grid-cols-1 w-full gap-3 mt-8">
+                  <div className="w-full mb-4">
+                    <input 
+                      type="text" 
+                      placeholder="What are you focusing on?"
+                      value={currentTask}
+                      onChange={(e) => {
+                        setCurrentTask(e.target.value);
+                        localStorage.setItem('currentTask', e.target.value);
+                      }}
+                      className="w-full bg-black/50 border border-white/5 rounded-xl px-4 py-2 text-sm text-center text-indigo-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500/50 transition-colors"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 w-full gap-3 mt-4">
                     {!isClockedIn && !isOnBreak ? (
                       <button 
                         onClick={() => handleAction('in')} 
@@ -288,6 +363,28 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                       formatter={(v) => `${currency}${v.toFixed(4)}`}
                       className="text-white font-mono"
                     />
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-3xl border border-white/10 p-8">
+                  <h3 className="text-slate-300 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-indigo-400" /> Key Insights
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Peak Day (30d)</span>
+                      <span className="text-white font-mono text-xs">{busiestDay ? format(parseSafeDate(busiestDay.date), 'MMM d') : '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-500">Peak Hours</span>
+                      <span className="text-indigo-400 font-mono font-bold text-xs">{busiestDay ? (busiestDay.totalWorkedMs / (1000*3600)).toFixed(1) + 'h' : '-'}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm border-t border-white/5 pt-4 mt-2">
+                      <span className="text-slate-500 flex justify-between w-full">
+                        <span>Max Streak</span>
+                        <span className="text-amber-400 font-bold">{maxStreak} days</span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -356,11 +453,19 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                     )}
                     
                     {(activityView === 'monthly' || activityView === 'yearly') && (
-                      <CalendarGrid summaries={summaries} view={activityView} now={now} />
+                      <CalendarGrid 
+                        summaries={summaries} 
+                        view={activityView} 
+                        now={now} 
+                        onDaySelect={(date) => {
+                          setTimelineBaseDate(date);
+                          setActivityView('timeline');
+                        }}
+                      />
                     )}
 
                     {activityView === 'timeline' && (
-                      <DailyTimeline blocks={getDailyBlocks(entries, format(now, 'yyyy-MM-dd'), now)} />
+                      <WeeklyTimeline entries={entries} baseDate={timelineBaseDate} now={now} />
                     )}
                   </div>
                 </div>
@@ -394,7 +499,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
 
                        const displayDate = entry.timestamp.endsWith('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp.replace(' ', 'T') + 'Z');
                        return (
-                      <div key={entry.id} className="flex justify-between items-center p-4 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/5 transition-colors">
+                      <div key={entry.id} className="flex justify-between items-center p-4 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/5 transition-colors group">
                         <div className="flex items-center gap-3">
                           <div className={cn("w-2 h-2 rounded-full", {
                             'bg-green-400': entry.type === 'in',
@@ -403,11 +508,32 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                             'bg-blue-400': entry.type === 'break_end'
                           })} />
                           <span className="font-medium text-sm text-slate-300 capitalize">{entry.type.replace('_', ' ')}</span>
-                          <span className="text-xs text-slate-500 ml-2">{progressText}</span>
+                          <span className="text-xs text-slate-500 ml-2 hidden sm:inline">{progressText}</span>
                         </div>
-                        <span className="text-xs font-mono text-slate-500">
-                          {format(displayDate, 'MMM d, h:mm:ss a')}
-                        </span>
+                        <div className="flex items-center gap-4">
+                          <span className="text-xs font-mono text-slate-500">
+                            {format(displayDate, 'MMM d, h:mm:ss a')}
+                          </span>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => {
+                                setEditingEntry(entry);
+                                setEditDate(format(displayDate, 'yyyy-MM-dd'));
+                                setEditTime(format(displayDate, 'HH:mm'));
+                                setEditType(entry.type);
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-white/5 rounded-lg transition-colors"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-white/5 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )})}
                     {entries.length === 0 && (
@@ -535,6 +661,54 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                 </div>
                 <div className="flex gap-3 pt-4">
                   <button type="button" onClick={() => setShowManualModal(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-400 hover:bg-white/5 transition-colors">Cancel</button>
+                  <button type="submit" disabled={loading} className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal for Edit Entry */}
+        {editingEntry && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#0a0a0a] border border-white/10 p-6 rounded-3xl w-full max-w-sm space-y-6">
+              <h3 className="text-xl font-medium text-white">Edit Entry</h3>
+              <form onSubmit={handleEditEntry} className="space-y-4">
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Type</label>
+                  <select 
+                    value={editType} 
+                    onChange={e => setEditType(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="in">Clock In</option>
+                    <option value="out">Clock Out</option>
+                    <option value="break_start">Start Break</option>
+                    <option value="break_end">End Break</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={editDate}
+                    onChange={e => setEditDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Time</label>
+                  <input 
+                    type="time" 
+                    required
+                    value={editTime}
+                    onChange={e => setEditTime(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setEditingEntry(null)} className="flex-1 py-3 px-4 rounded-xl text-slate-400 hover:bg-white/5 transition-colors">Cancel</button>
                   <button type="submit" disabled={loading} className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
                 </div>
               </form>

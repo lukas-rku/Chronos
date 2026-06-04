@@ -285,6 +285,34 @@ app.get('/api/entries', requireAuth, async (req, res) => {
   }
 });
 
+app.put('/api/entries/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { type, timestamp, project } = req.body;
+  const entry = dbInstance.time_entries.find(e => e.id === Number(id) && e.user_id === req.session.userId);
+  if (!entry) return res.status(404).json({error: 'Not found'});
+  
+  if (type) entry.type = type;
+  if (timestamp) {
+    entry.timestamp = new Date(timestamp).toISOString();
+  }
+  if (project !== undefined) entry.project = project;
+  
+  saveDb();
+  res.json({success: true});
+});
+
+app.delete('/api/entries/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const initialLength = dbInstance.time_entries.length;
+  dbInstance.time_entries = dbInstance.time_entries.filter(e => !(e.id === Number(id) && e.user_id === req.session.userId));
+  if (dbInstance.time_entries.length !== initialLength) {
+    saveDb();
+    res.json({success: true});
+  } else {
+    res.status(404).json({error: 'Not found'});
+  }
+});
+
 app.post('/api/v1/action', requireApiKey, async (req: any, res: any) => {
   const { type } = req.body;
   if (!['in', 'out', 'break_start', 'break_end'].includes(type)) {
