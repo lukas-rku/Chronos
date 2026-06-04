@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, TimeEntry } from '../types';
 import { calculateDailySummaries, formatDuration, formatHourlyPay, cn } from '../utils';
-import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone } from 'lucide-react';
+import { Clock, Play, Square, Coffee, LogOut, Code, Calendar, DollarSign, Activity, History, Home, Settings, Smartphone, Download, Plus } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import {
   BarChart,
@@ -16,14 +16,26 @@ import {
 export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void }) {
   const [entries, setEntries] = useState<TimeEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hourlyRate, setHourlyRate] = useState(25); // Could be saved to local storage or DB
+  
+  const [hourlyRate, setHourlyRate] = useState(() => Number(localStorage.getItem('hourlyRate') || '25'));
+  const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '$');
+  
   const [activeTab, setActiveTab] = useState<'overview' | 'settings'>('overview');
+  const [now, setNow] = useState(new Date());
+
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualType, setManualType] = useState('in');
+  const [manualDate, setManualDate] = useState('');
+  const [manualTime, setManualTime] = useState('');
 
   useEffect(() => {
     fetchEntries();
     
-    // Auto refresh while clocked in
-    const interval = setInterval(fetchEntries, 60000);
+    // Tick clock every second
+    const interval = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    
     return () => clearInterval(interval);
   }, []);
 
@@ -33,6 +45,12 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
       setEntries(await res.json());
     }
     setLoading(false);
+  };
+
+  const saveSettings = () => {
+    localStorage.setItem('hourlyRate', hourlyRate.toString());
+    localStorage.setItem('currency', currency);
+    alert('Settings saved!');
   };
 
   const handleAction = async (type: 'in' | 'out' | 'break_start' | 'break_end') => {
@@ -45,9 +63,44 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
     fetchEntries();
   };
 
-  const summaries = calculateDailySummaries(entries);
-  const today = summaries[0]?.date === format(new Date(), 'yyyy-MM-dd') ? summaries[0] : null;
-  const currentStatus = entries[0]?.type; // newest is first
+  const handleManualAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualDate || !manualTime) return;
+    
+    // SQLite format: YYYY-MM-DD HH:mm:ss
+    const timestamp = `${manualDate} ${manualTime}:00`;
+    
+    setLoading(true);
+    await fetch('/api/manual_entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: manualType, timestamp })
+    });
+    
+    setShowManualModal(false);
+    fetchEntries();
+  };
+
+  const handleExportCSV = () => {
+    const rows = [
+      ['Timestamp', 'Action Type'],
+      ...entries.map(e => [e.timestamp, e.type])
+    ];
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + rows.map(e => e.join(",")).join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "timesheet.csv");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const summaries = calculateDailySummaries(entries, now);
+  const today = summaries[0]?.date === format(now, 'yyyy-MM-dd') ? summaries[0] : null;
+  const currentStatus = entries[0]?.type; 
   
   const isClockedIn = currentStatus === 'in' || currentStatus === 'break_end';
   const isOnBreak = currentStatus === 'break_start';
@@ -87,7 +140,7 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col p-4 sm:p-8 gap-8 overflow-y-auto custom-scrollbar">
+      <main className="flex-1 flex flex-col p-4 sm:p-8 gap-8 overflow-y-auto custom-scrollbar relative">
         {/* Header Section */}
         <header className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 shrink-0 mt-4 sm:mt-0">
           <div className="flex justify-between items-center w-full sm:w-auto">
@@ -124,15 +177,15 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
               {/* Control Panel */}
               <div className="lg:col-span-4 flex flex-col gap-6">
-                <div className="bg-white/5 rounded-3xl border border-white/10 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden">
+                <div className="bg-white/5 rounded-3xl border border-white/10 p-8 flex flex-col items-center justify-center text-center relative overflow-hidden transition-all duration-300 hover:border-indigo-500/30">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/40 to-transparent"></div>
                   
                   <p className="text-xs uppercase tracking-[0.2em] text-indigo-400 mb-2">Current Pulse</p>
-                  <div className="text-5xl font-mono font-bold text-white mb-1">
-                    {today ? formatDuration(today.totalWorkedMs) : '0h 0m'}
+                  <div className="text-5xl font-mono font-bold text-white mb-1 transition-all duration-200">
+                    {today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}
                   </div>
                   {today && today.totalBreakMs > 0 ? (
-                    <p className="text-slate-400 text-sm mt-2">Break: {formatDuration(today.totalBreakMs)}</p>
+                    <p className="text-slate-400 text-sm mt-2 font-mono">Break: {formatDuration(today.totalBreakMs)}</p>
                   ) : (
                     <p className="text-slate-400 text-sm mt-2">Ready to work</p>
                   )}
@@ -173,12 +226,12 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                   <h3 className="text-slate-300 text-xs uppercase tracking-widest mb-6 flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-emerald-400" /> Earnings Estimator
                   </h3>
-                  <div className="flex justify-between items-baseline mb-2">
-                    <span className="text-4xl font-bold text-white">{formatHourlyPay(totalWeekMs, hourlyRate)}</span>
+                  <div className="flex justify-between items-baseline mb-2 transition-all duration-300 cursor-default">
+                    <span className="text-4xl font-bold text-white font-mono">{formatHourlyPay(totalWeekMs, hourlyRate, currency)}</span>
                     <span className="text-emerald-400 text-xs font-bold font-mono">THIS WEEK</span>
                   </div>
                   <div className="mt-4 text-sm text-slate-400">
-                    Today: <span className="text-white font-mono">{formatHourlyPay(today?.totalWorkedMs || 0, hourlyRate)}</span>
+                    Today: <span className="text-white font-mono">{formatHourlyPay(today?.totalWorkedMs || 0, hourlyRate, currency)}</span>
                   </div>
                 </div>
               </div>
@@ -188,15 +241,16 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <p className="text-slate-500 text-xs uppercase mb-1">Weekly Hours</p>
-                    <p className="text-2xl font-bold text-white">{formatDuration(totalWeekMs)}</p>
+                    <p className="text-2xl font-bold text-white font-mono">{formatDuration(totalWeekMs)}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <p className="text-slate-500 text-xs uppercase mb-1">Today's Total</p>
-                    <p className="text-2xl font-bold text-white">{today ? formatDuration(today.totalWorkedMs) : '0h 0m'}</p>
+                    <p className="text-2xl font-bold text-white font-mono">{today ? formatDuration(today.totalWorkedMs) : '0h 0m 0s'}</p>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
                     <p className="text-slate-500 text-xs uppercase mb-1">Current State</p>
-                    <p className={cn("text-2xl font-bold", isClockedIn ? "text-green-400" : (isOnBreak ? "text-yellow-400" : "text-slate-400"))}>
+                    <p className={cn("text-2xl font-bold flex items-center gap-2", isClockedIn ? "text-green-400" : (isOnBreak ? "text-yellow-400" : "text-slate-400"))}>
+                      <span className={cn("inline-block w-2 h-2 rounded-full", isClockedIn ? "bg-green-400 animate-pulse" : (isOnBreak ? "bg-yellow-400" : "bg-slate-400"))}></span>
                       {isClockedIn ? 'Working' : (isOnBreak ? 'On Break' : 'Offline')}
                     </p>
                   </div>
@@ -232,12 +286,34 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                 </div>
 
                 <div className="bg-white/5 border border-white/10 rounded-3xl p-8 max-h-[300px] flex flex-col">
-                  <h3 className="text-lg font-medium text-white flex items-center gap-2 mb-6 shrink-0">
-                    <History className="w-5 h-5 text-purple-400" />
-                    Recent Actions
-                  </h3>
+                  <div className="flex justify-between items-center mb-6 shrink-0">
+                    <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                      <History className="w-5 h-5 text-purple-400" />
+                      Recent Actions
+                    </h3>
+                    <div className="flex gap-2">
+                      <button onClick={handleExportCSV} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setShowManualModal(true)} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:text-white hover:bg-white/5 transition-colors">
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                   <div className="overflow-y-auto space-y-3 pr-2 custom-scrollbar flex-1">
-                    {entries.slice(0, 15).map(entry => (
+                    {entries.slice(0, 15).map((entry, i) => {
+                       // Find the next chronologically (older entry, i.e. i+1 since we're sorted desc)
+                       const nextEntry = entries[i+1];
+                       let progressText = '';
+                       if (entry.type === 'out' && nextEntry && nextEntry.type === 'in') {
+                         const entryDate = entry.timestamp.endsWith('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp.replace(' ', 'T') + 'Z');
+                         const nextEntryDate = nextEntry.timestamp.endsWith('Z') ? new Date(nextEntry.timestamp) : new Date(nextEntry.timestamp.replace(' ', 'T') + 'Z');
+                         const diff = entryDate.getTime() - nextEntryDate.getTime();
+                         progressText = `[Worked ${formatDuration(diff)}]`;
+                       }
+
+                       const displayDate = entry.timestamp.endsWith('Z') ? new Date(entry.timestamp) : new Date(entry.timestamp.replace(' ', 'T') + 'Z');
+                       return (
                       <div key={entry.id} className="flex justify-between items-center p-4 bg-white/[0.02] border border-white/5 rounded-xl hover:bg-white/5 transition-colors">
                         <div className="flex items-center gap-3">
                           <div className={cn("w-2 h-2 rounded-full", {
@@ -247,12 +323,13 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                             'bg-blue-400': entry.type === 'break_end'
                           })} />
                           <span className="font-medium text-sm text-slate-300 capitalize">{entry.type.replace('_', ' ')}</span>
+                          <span className="text-xs text-slate-500 ml-2">{progressText}</span>
                         </div>
                         <span className="text-xs font-mono text-slate-500">
-                          {format(new Date(entry.timestamp.replace(' ', 'T')), 'MMM d, h:mm a')}
+                          {format(displayDate, 'MMM d, h:mm:ss a')}
                         </span>
                       </div>
-                    ))}
+                    )})}
                     {entries.length === 0 && (
                       <p className="text-center text-slate-500 py-4">No recent activity</p>
                     )}
@@ -268,15 +345,32 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
                 <p className="text-slate-400">Configure your Apple Shortcuts integration and preferences.</p>
               </div>
 
-              <div className="space-y-4">
-                <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider">Hourly Rate Calculation ($)</label>
-                <input 
-                  type="number" 
-                  value={hourlyRate}
-                  onChange={e => setHourlyRate(Number(e.target.value))}
-                  className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider">Hourly Rate</label>
+                  <input 
+                    type="number" 
+                    value={hourlyRate}
+                    onChange={e => setHourlyRate(Number(e.target.value))}
+                    className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
+                  />
+                </div>
+                <div className="space-y-4">
+                  <label className="block text-sm font-medium text-slate-300 uppercase tracking-wider">Currency Symbol</label>
+                  <input 
+                    type="text" 
+                    value={currency}
+                    onChange={e => setCurrency(e.target.value)}
+                    className="w-full bg-[#0a0a0a] border border-white/5 rounded-2xl px-4 py-4 text-white focus:outline-none focus:border-indigo-500 focus:bg-white/5 font-mono transition-colors"
+                  />
+                </div>
               </div>
+              <button 
+                onClick={saveSettings}
+                className="px-6 py-3 bg-indigo-600 rounded-xl font-medium hover:bg-indigo-500 transition-colors"
+              >
+                Save Preferences
+              </button>
 
               <div className="space-y-6 bg-[#0a0a0a] p-8 rounded-3xl border border-white/5">
                 <div className="flex items-center gap-3">
@@ -308,6 +402,55 @@ export function Dashboard({ user, onLogout }: { user: User, onLogout: () => void
             </div>
           )}
         </div>
+
+        {/* Modal for Manual Entry */}
+        {showManualModal && (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#0a0a0a] border border-white/10 p-6 rounded-3xl w-full max-w-sm space-y-6">
+              <h3 className="text-xl font-medium text-white">Add Manual Entry</h3>
+              <form onSubmit={handleManualAdd} className="space-y-4">
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Type</label>
+                  <select 
+                    value={manualType} 
+                    onChange={e => setManualType(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value="in">Clock In</option>
+                    <option value="out">Clock Out</option>
+                    <option value="break_start">Start Break</option>
+                    <option value="break_end">End Break</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Date</label>
+                  <input 
+                    type="date" 
+                    required
+                    value={manualDate}
+                    onChange={e => setManualDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase text-slate-400 tracking-wider mb-2">Time</label>
+                  <input 
+                    type="time" 
+                    required
+                    value={manualTime}
+                    onChange={e => setManualTime(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button type="button" onClick={() => setShowManualModal(false)} className="flex-1 py-3 px-4 rounded-xl text-slate-400 hover:bg-white/5 transition-colors">Cancel</button>
+                  <button type="submit" disabled={loading} className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 text-white hover:bg-indigo-500 transition-colors">Save</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
       </main>
     </div>
   );

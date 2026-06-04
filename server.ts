@@ -14,6 +14,7 @@ declare module 'express-session' {
 
 const PORT = 3000;
 const app = express();
+app.set('trust proxy', 1);
 
 app.use(express.json());
 app.use(cookieParser());
@@ -80,11 +81,16 @@ const dbInsertUser = async (sub: string, email: string, name: string, apiKey: st
   return newUser;
 };
 
-const dbInsertEntry = async (userId: number, type: string) => {
-  // Use YYYY-MM-DD HH:mm:ss format like SQLite CURRENT_TIMESTAMP
+const dbInsertEntry = async (userId: number, type: string, customTimestamp?: string) => {
   const now = new Date();
-  const timestamp = now.toISOString().replace('T', ' ').substring(0, 19);
-  const newEntry = { id: Date.now(), user_id: userId, type, timestamp };
+  
+  // If manual entry (YYYY-MM-DD HH:mm:00), we parse it as local time, then save ISO
+  let timestampToSave = now.toISOString();
+  if (customTimestamp) {
+    timestampToSave = new Date(customTimestamp).toISOString();
+  }
+
+  const newEntry = { id: Date.now(), user_id: userId, type, timestamp: timestampToSave };
   dbInstance.time_entries.push(newEntry);
   saveDb();
   return newEntry;
@@ -251,6 +257,19 @@ app.post('/api/action', requireAuth, async (req, res) => {
   }
   try {
     await dbInsertEntry(req.session.userId!, type);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: 'Failed to record action' });
+  }
+});
+
+app.post('/api/manual_entry', requireAuth, async (req, res) => {
+  const { type, timestamp } = req.body;
+  if (!['in', 'out', 'break_start', 'break_end'].includes(type) || !timestamp) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
+  try {
+    await dbInsertEntry(req.session.userId!, type, timestamp);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: 'Failed to record action' });
